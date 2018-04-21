@@ -1,8 +1,11 @@
-require "fileutils"
+require 'fileutils'
+require 'htmlbeautifier'
+require 'diffy'
 
 module RSpec
   module Snapshot
     module Matchers
+      # Matcher class, compares two snapshots
       class MatchSnapShot
         def initialize(metadata, snapshot_name)
           @metadata = metadata
@@ -10,32 +13,40 @@ module RSpec
         end
 
         def matches?(actual)
-          @actual = actual
-          filename = "#{@snapshot_name}.snap"
-          snap_path = File.join(snapshot_dir, filename)
-          FileUtils.mkdir_p(File.dirname(snap_path)) unless Dir.exist?(File.dirname(snap_path))
+          @actual = HtmlBeautifier.beautify(actual)
+          snap_path = File.join(snapshot_dir, "#{@snapshot_name}.snap")
+          dir = File.dirname(snap_path)
+          FileUtils.mkdir_p(dir) unless Dir.exist?(dir)
+
           if File.exist?(snap_path)
-            file = File.new(snap_path)
-            @expect = file.read
-            file.close
-            @actual.to_s == @expect
+            @expected = File.read(snap_path)
+            @actual == @expected
           else
-            RSpec.configuration.reporter.message "Generate #{snap_path}"
-            file = File.new(snap_path, "w+")
-            file.write(@actual)
-            file.close
-            true
+            store_snapshot(@actual, snap_path)
           end
         end
 
-
         def failure_message
-          "\nexpected: #{@expect}\n     got: #{@actual}\n"
+          "\nSnapshots do not match:\n\n #{diff}"
+        end
+
+        private
+
+        def store_snapshot(snapshot, snap_path)
+          message = "Generating snapshot: #{snap_path}"
+          RSpec.configuration.reporter.message(message)
+          File.write(snap_path, snapshot)
+          true
+        end
+
+        def diff
+          diff_string = Diffy::Diff.new(@expected, @actual).to_s
+          diff_string.gsub('\ No newline at end of file', '')
         end
 
         def snapshot_dir
           if RSpec.configuration.snapshot_dir.to_s == 'relative'
-            File.dirname(@metadata[:file_path]) << "/__snapshots__"
+            File.dirname(@metadata[:file_path]) << '/__snapshots__'
           else
             RSpec.configuration.snapshot_dir
           end
